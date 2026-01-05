@@ -27,43 +27,61 @@ from PyQt5.QtWidgets import QVBoxLayout, QLabel, QCheckBox, QLineEdit
 from PyQt5.QtWidgets import QApplication
 
 # Serial Configuration
-BAUD_RATE = 250000
-NUM_SAMPLES = 1800 # (X-axis)
+BAUD_RATE = 115200
+NUM_SAMPLES = 500 # (Y-axis)
 
-MAX_ROWS = 300  # Number of time steps (Y-axis)
-Y_LABEL_DISTANCE = 50  # distance between labels in cm
+MAX_COLUMNS = 300  # Number of time steps (X-axis)
+Y_LABEL_DISTANCE = 100  # distance between labels in cm
 
-SPEED_OF_SOUND = 1440  # default sound speed meters/second in water
-# SPEED_OF_SOUND = 343  # default sound speed meters/second in water
+# SPEED_OF_SOUND = 1440  # default sound speed meters/second in water
+SPEED_OF_SOUND = 343  # default sound speed meters/second in air
 
-# SAMPLE_TIME = 52.226e-6  # 13.2 microseconds on Atmega328 max sample speed plus 50 microseconds delay in sampling loop
+MAX_DEPTH = 10 # you can go deeper but do not go below 10. Accuracy issues then
+
+SAMPLE_TIME =  (1 / ((SPEED_OF_SOUND / MAX_DEPTH) * NUM_SAMPLES)) * 2
+
+MAX_DEPTH = MAX_DEPTH * 100 # meters to cm
+
+#SAMPLE_TIME = 52.226e-6  # 13.2 microseconds on Atmega328 max sample speed plus 50 microseconds delay in sampling loop
 # SAMPLE_TIME = 47.0e-6
 # SAMPLE_TIME = 41.666e-6 # 13.2 microseconds on Atmega328 max sample speed plus 40 microseconds delay in sampling loop
 # SAMPLE_TIME = 22.22e-6  # 13.2 microseconds on Atmega328 max sample speed plus 20 microseconds delay in sampling loop
-SAMPLE_TIME = 13.2e-6     # 13.2 microseconds on Atmega328 max sample speed without additional delay
+# SAMPLE_TIME = 13.2e-6     # 13.2 microseconds on Atmega328 max sample speed without additional delay
 # SAMPLE_TIME = 11.0e-6     # 13.2 microseconds on RP2040 max sample speed with 10 microseconds additional delay per sample
 # SAMPLE_TIME = 7.682e-6  # 7.682 microseconds on STM32F103 max sample speed
 # SAMPLE_TIME = 6.0e-6  # 6 microseconds on RP2040 max sample speed with 5 microseconds additional delay per sample
 # SAMPLE_TIME = 1.290e-6     # 13.2 microseconds on RP2040 max sample speed without additional delay
 
-DEFAULT_LEVELS = (0, 256)  # Expected data range
+DEFAULT_LEVELS = (0, 255)  # Expected data range
 
-SAMPLE_RESOLUTION = (SPEED_OF_SOUND * SAMPLE_TIME * 100) / 2  # cm per row (0.99 cm per row)
+SAMPLE_RESOLUTION = MAX_DEPTH / NUM_SAMPLES # (SPEED_OF_SOUND * SAMPLE_TIME * 100) #/ 2  # cm per row 
 PACKET_SIZE = 1 + 6 + NUM_SAMPLES + 1  # header + payload + checksum
-MAX_DEPTH = NUM_SAMPLES * SAMPLE_RESOLUTION  # Total depth in cm
+#MAX_DEPTH = NUM_SAMPLES * SAMPLE_RESOLUTION  # Total depth in cm
 depth_labels = {int(i / SAMPLE_RESOLUTION): f"{i / 100}" for i in range(0, int(MAX_DEPTH), Y_LABEL_DISTANCE)}
+
+is_8bit = False
 
 
 def read_packet(ser):
+    global is_8bit
     while True:
-        header = ser.read(1)
-        if header != b"\xaa":
+
+        header = int.from_bytes(ser.read(1), byteorder='little')
+        if not (header & 0xaa) == 0xaa:
             continue  # Wait for the start byte
 
-        payload = ser.read(6 + NUM_SAMPLES)
+        w_fac = 2
+
+        if header == 0xab:
+            is_8bit = True
+            w_fac = 1
+
+
+        payload = ser.read(6 + NUM_SAMPLES * w_fac)
+
         checksum = ser.read(1)
 
-        if len(payload) != 6 + NUM_SAMPLES or len(checksum) != 1:
+        if len(payload) != 6 + NUM_SAMPLES * w_fac or len(checksum) != 1:
             continue  # Incomplete packet
 
         # Verify checksum
@@ -78,8 +96,11 @@ def read_packet(ser):
         depth, temp_scaled, vDrv_scaled = struct.unpack("<HhH", payload[:6])
         depth = min(depth, NUM_SAMPLES)
 
-        sample_bytes = payload[6:6+NUM_SAMPLES]
-        values = np.frombuffer(sample_bytes, dtype=np.uint8, count=NUM_SAMPLES)
+        sample_bytes = payload[6:6 + NUM_SAMPLES * w_fac]
+        if is_8bit == True:
+            values = np.frombuffer(sample_bytes, dtype=np.uint8, count=NUM_SAMPLES)
+        else:
+            values = np.frombuffer(sample_bytes, dtype=np.uint16, count=NUM_SAMPLES)
 
         temperature = temp_scaled / 100.0
         drive_voltage = vDrv_scaled / 100.0
@@ -466,7 +487,7 @@ class WaterfallApp(QMainWindow):
         self.setWindowTitle("Open Echo Interface")
         self.setGeometry(0, 0, 480, 800)  # Portrait mode for Raspberry Pi screen
 
-        self.data = np.zeros((MAX_ROWS, NUM_SAMPLES))
+        self.data = np.zeros((MAX_COLUMNS, NUM_SAMPLES))
 
         # Disable window translucency
         self.setAttribute(Qt.WA_TranslucentBackground, False)
@@ -707,9 +728,9 @@ class WaterfallApp(QMainWindow):
 
         SPEED_OF_SOUND = speed
         self.current_speed = speed
-        SAMPLE_RESOLUTION = (SPEED_OF_SOUND * SAMPLE_TIME * 100) / 2
+        #SAMPLE_RESOLUTION = MAX_DEPTH / NUM_SAMPLES # (SPEED_OF_SOUND * SAMPLE_TIME * 100);# / 2
         print(SAMPLE_RESOLUTION)
-        MAX_DEPTH = NUM_SAMPLES * SAMPLE_RESOLUTION
+        #MAX_DEPTH = NUM_SAMPLES * SAMPLE_RESOLUTION
         depth_labels = {
             int(i / SAMPLE_RESOLUTION): f"{i / 100}"
             for i in range(0, int(MAX_DEPTH), Y_LABEL_DISTANCE)
