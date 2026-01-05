@@ -121,6 +121,9 @@ void tuss4470Write(uint8_t addr, uint8_t data);
 uint8_t tuss4470Parity(uint8_t* spi16Val);
 unsigned int BitShiftCombine(unsigned char x_high, unsigned char x_low);
 uint8_t parity16(uint8_t val);
+#ifndef USE_DEPTH_OVERRIDE
+void handleInterrupt() {
+#endif
 
 
 void setup() {
@@ -222,10 +225,11 @@ void loop() {
         tuss4470Write(TOF_CONFIG, 0x01);
 
         setupTimer2();
-        TIMSK2 |= _BV(OCIE2A);      // enable timer2 interrupt
+        TIMSK2 |= _BV(OCIE2A);      
+        // enable timer2 interrupt for ADC capture
         startTransducerBurst();
         mode = RUNNING;
-        delay(1);
+        delay(1);   // a hack to account for a startup delay. Needs to be corrected somehow.
     } else if (mode == RUNNING) {
 
         if (captured) {
@@ -262,12 +266,12 @@ void loop() {
             if (sampleIndex == num_samples) {
                 mode = END;
             } else {
-                //TIMSK2 |= _BV(OCIE2A);      // reenable timer2 interrupt
                 captured = false;
             }
         }
 
     } else if (mode == END) {
+        // stop ADC captures
         stopTimer2();
         // Stop time-of-flight measurement
         tuss4470Write(TOF_CONFIG, 0x00);
@@ -278,10 +282,10 @@ void loop() {
         mode = START;
     }
 
+    // RX on UART? Does nothing for now
     if (!fifo_is_empty(rx_buffer)) {
         char c;
         fifo_get(rx_buffer, &c);
-        temp_scaled = c * 100.0;
     }
 }
 
@@ -335,7 +339,6 @@ ISR(TIMER2_COMPA_vect) {
     sample = ADC;
 #endif
     captured = true;
-    //TIMSK2 &= ~_BV(OCIE2A);     // disable sample timer interrupt
 }
 
 
