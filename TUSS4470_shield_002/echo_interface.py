@@ -52,7 +52,8 @@ MAX_DEPTH = MAX_DEPTH * 100 # meters to cm
 # SAMPLE_TIME = 6.0e-6  # 6 microseconds on RP2040 max sample speed with 5 microseconds additional delay per sample
 # SAMPLE_TIME = 1.290e-6     # 13.2 microseconds on RP2040 max sample speed without additional delay
 
-DEFAULT_LEVELS = (0, 255)  # Expected data range
+DEFAULT_LEVELS = (0, 255)  # Expected data range for 8-bit
+# DEFAULT_LEVELS = (0, 1023)  # Expected data range for 10-bit
 
 SAMPLE_RESOLUTION = MAX_DEPTH / NUM_SAMPLES # (SPEED_OF_SOUND * SAMPLE_TIME * 100) #/ 2  # cm per row 
 PACKET_SIZE = 1 + 6 + NUM_SAMPLES + 1  # header + payload + checksum
